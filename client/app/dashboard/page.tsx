@@ -1,16 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { logout, readCsrfToken } from "@/lib/api";
+import {
+  logout,
+  listUploads,
+  readCsrfToken,
+  uploadFile,
+  type UploadMeta,
+} from "@/lib/api";
 
-/**
- * Intentionally blank -- this is the shell the log upload and analysis views
- * will be built into. It only proves the auth round trip worked.
- */
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
+  const [uploads, setUploads] = useState<UploadMeta[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshUploads = useCallback(async (name: string) => {
+    try {
+      setUploads(await listUploads(name));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load uploads");
+    }
+  }, []);
 
   useEffect(() => {
     // Cheap client-side guard so a direct visit to /dashboard does not render
@@ -22,7 +43,8 @@ export default function DashboardPage() {
       return;
     }
     setUsername(name);
-  }, [router]);
+    refreshUploads(name);
+  }, [router, refreshUploads]);
 
   async function onLogout() {
     if (username) {
@@ -31,6 +53,23 @@ export default function DashboardPage() {
     }
     sessionStorage.removeItem("username");
     router.replace("/login");
+  }
+
+  async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !username) return;
+
+    setError(null);
+    setBusy(true);
+    try {
+      await uploadFile(username, file);
+      await refreshUploads(username);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   if (!username) return null;
@@ -43,7 +82,46 @@ export default function DashboardPage() {
           Log out
         </button>
       </header>
-      <main />
+      <main className="uploads">
+        <div className="uploads-toolbar">
+          <label className="btn upload-btn">
+            {busy ? "Uploading..." : "Upload log file"}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.log,.json"
+              onChange={onFileChosen}
+              disabled={busy}
+              hidden
+            />
+          </label>
+        </div>
+
+        {error && <p className="msg">{error}</p>}
+
+        {uploads.length === 0 ? (
+          <p className="sub">No files uploaded yet.</p>
+        ) : (
+          <table className="uploads-table">
+            <thead>
+              <tr>
+                <th>Filename</th>
+                <th>Size</th>
+                <th>Uploaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {uploads.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.filename}</td>
+                  <td>{formatSize(u.size_bytes)}</td>
+                  <td>{new Date(u.uploaded_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </main>
     </>
   );
 }

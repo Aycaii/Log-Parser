@@ -31,6 +31,28 @@ async function post(path: string, body: Record<string, string>, csrf?: string) {
   return text;
 }
 
+// Same shape as post(), but the upload endpoints respond with JSON rather
+// than a plain status string.
+async function postJSON<T>(path: string, body: Record<string, string>, csrf?: string): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: new URLSearchParams(body).toString(),
+  });
+
+  if (!res.ok) {
+    const text = (await res.text()).trim();
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export function register(username: string, password: string) {
   return post("/register", { username, password });
 }
@@ -45,6 +67,46 @@ export function logout(username: string) {
 
 export function getProtected(username: string) {
   return post("/protected", { username }, readCsrfToken() ?? undefined);
+}
+
+export type UploadMeta = {
+  id: number;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string;
+};
+
+export function listUploads(username: string) {
+  return postJSON<UploadMeta[]>("/uploads", { username }, readCsrfToken() ?? undefined);
+}
+
+/**
+ * The Go handler reads this as multipart/form-data (r.ParseMultipartForm),
+ * so username has to ride along as a form field here too -- Authorize()
+ * looks it up the same way it does for the urlencoded endpoints.
+ */
+export async function uploadFile(username: string, file: File) {
+  const csrf = readCsrfToken();
+  const form = new FormData();
+  form.append("username", username);
+  form.append("file", file);
+
+  const headers: Record<string, string> = {};
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+
+  const res = await fetch(`${API_BASE}/upload`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: form,
+  });
+
+  if (!res.ok) {
+    const text = (await res.text()).trim();
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+  return res.json() as Promise<UploadMeta>;
 }
 
 /**
