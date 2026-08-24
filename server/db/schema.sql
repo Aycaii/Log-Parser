@@ -74,3 +74,38 @@ CREATE TABLE IF NOT EXISTS events (
 -- Backs both the per-upload event list and the timeline summary, which both
 -- read in event_time order.
 CREATE INDEX IF NOT EXISTS events_upload_idx ON events (upload_id, event_time);
+
+-- AI-based anomaly detection (bonus). Best-effort at upload time: a missing
+-- GEMINI_API_KEY or a failed call just leaves these empty rather than
+-- failing the upload -- see threatdetect.AnalyzeLogsWithAI and its caller
+-- in upload.go.
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS threat_summary TEXT NOT NULL DEFAULT '';
+
+-- Lets the UI tell "detection ran and found nothing" apart from "detection
+-- never ran" or "detection errored out" -- all three look identical if you
+-- only look at threat_summary/anomalies being empty. 'pending' is the
+-- default until the background goroutine kicked off in upload.go resolves
+-- it to 'ok', 'error', or 'skipped' (no parsed lines to analyze).
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS threat_status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS threat_error  TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS anomalies (
+    id               BIGSERIAL        PRIMARY KEY,
+    upload_id        BIGINT           NOT NULL REFERENCES uploads (id) ON DELETE CASCADE,
+    source_ip        TEXT             NOT NULL,
+    -- Stored as the model returned it (TEXT, not TIMESTAMPTZ) -- an LLM
+    -- response isn't a trusted, guaranteed-parseable timestamp source the
+    -- way the regex parser's own output is.
+    event_time       TEXT             NOT NULL,
+    is_anomaly       BOOLEAN          NOT NULL,
+    reason           TEXT             NOT NULL,
+    confidence_score DOUBLE PRECISION NOT NULL
+);
+
+-- One of "critical", "high", "medium", "low", "informational" -- the
+-- model's own severity call, not derived from confidence_score (a
+-- low-confidence guess can still describe a critical threat, and a
+-- high-confidence one can describe routine noise).
+ALTER TABLE anomalies ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'informational';
+
+CREATE INDEX IF NOT EXISTS anomalies_upload_idx ON anomalies (upload_id);

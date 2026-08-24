@@ -219,6 +219,24 @@ select {
   overflow: hidden;
 }
 
+/* Findings is its own card below the events/skipped-lines card, not a third
+   tab in it -- this just keeps stacked cards from touching. */
+.table-card + .table-card {
+  margin-top: 18px;
+}
+
+/* Findings' card header: same look as a tab-strip, but a plain label since
+   there's nothing to switch between. */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .tab-strip {
   display: flex;
   border-bottom: 1px solid var(--border);
@@ -388,6 +406,28 @@ select {
 
 .status-dot.critical {
   background: var(--danger);
+}
+
+/* Toggleable severity filter chips in the Threats tab -- same shape as
+   .filter-box, but each one doubles as its own on/off control instead of
+   holding a separate dropdown + input. */
+.severity-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.severity-toggle.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.08);
 }
 
 

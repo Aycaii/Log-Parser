@@ -3,6 +3,7 @@ package upload
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"logparseapp/auth"
 	"logparseapp/db"
 	"logparseapp/parser"
+	"logparseapp/threatdetect"
 )
 
 type UploadMeta struct {
@@ -22,9 +24,6 @@ type UploadMeta struct {
 	SkippedCount int       `json:"skipped_count"`
 }
 
-// r.FormValue (used inside auth.Authorize) parses the multipart form itself
-// if it hasn't been parsed yet, but with the default in-memory cap -- calling
-// ParseMultipartForm first with our own limit avoids relying on that default.
 func UploadFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -106,6 +105,30 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	// AI-based anomaly detection over the entries just parsed. 
+	go func() {
+		if len(entries) == 0 {
+			if err := setThreatStatus(meta.ID, "skipped", ""); err != nil {
+				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
+			}
+			return
+		}
+		report, err := threatdetect.AnalyzeLogsWithAI(entries)
+		if err != nil {
+			log.Printf("anomaly detection failed for upload %d: %v", meta.ID, err)
+			if err := setThreatStatus(meta.ID, "error", err.Error()); err != nil {
+				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
+			}
+			return
+		}
+		if err := storeAnomalies(meta.ID, report); err != nil {
+			log.Printf("failed to store anomaly report for upload %d: %v", meta.ID, err)
+			if err := setThreatStatus(meta.ID, "error", err.Error()); err != nil {
+				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
+			}
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(meta)

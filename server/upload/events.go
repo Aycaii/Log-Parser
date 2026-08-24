@@ -30,18 +30,29 @@ type Summary struct {
 	StatusBreakdown []CountEntry     `json:"status_breakdown"`
 }
 
+type Anomaly struct {
+	SourceIP        string  `json:"source_ip"`
+	EventTime       string  `json:"event_time"`
+	IsAnomaly       bool    `json:"is_anomaly"`
+	Reason          string  `json:"reason"`
+	ConfidenceScore float64 `json:"confidence_score"`
+	Severity string `json:"severity"`
+}
+
 type EventsResponse struct {
-	Events       []parser.LogEntry `json:"events"`
-	SkippedLines []string          `json:"skipped_lines"`
-	Summary      Summary           `json:"summary"`
+	Events        []parser.LogEntry `json:"events"`
+	SkippedLines  []string          `json:"skipped_lines"`
+	Summary       Summary           `json:"summary"`
+	ThreatSummary string            `json:"threat_summary"`
+	ThreatStatus string    `json:"threat_status"`
+	ThreatError  string    `json:"threat_error"`
+	Anomalies    []Anomaly `json:"anomalies"`
 }
 
 const timelineBuckets = 20
 
 // GetUploadEvents returns the events parsed from one upload (at upload time,
-// see UploadFile) plus a summary built from them -- top source IPs/URLs, a
-// status-code breakdown, and a fixed-bucket timeline, which is the
-// "summarized timeline of events" the SOC-analyst view is built around.
+// see UploadFile) plus a summary built from them
 func GetUploadEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -62,10 +73,12 @@ func GetUploadEvents(w http.ResponseWriter, r *http.Request) {
 
 	var skippedCount int
 	var skippedLinesRaw string
+	var threatSummary, threatStatus, threatError string
 	err = db.DB.QueryRow(
-		`SELECT skipped_count, skipped_lines FROM uploads WHERE id = $1 AND user_id = $2`,
+		`SELECT skipped_count, skipped_lines, threat_summary, threat_status, threat_error
+		 FROM uploads WHERE id = $1 AND user_id = $2`,
 		uploadID, userID,
-	).Scan(&skippedCount, &skippedLinesRaw)
+	).Scan(&skippedCount, &skippedLinesRaw, &threatSummary, &threatStatus, &threatError)
 	if err != nil {
 		http.Error(w, "Upload not found", http.StatusNotFound)
 		return
@@ -102,10 +115,40 @@ func GetUploadEvents(w http.ResponseWriter, r *http.Request) {
 		events = append(events, e)
 	}
 
+	// Same ownership guard as the events query above: join against
+	// uploads.user_id rather than trusting upload_id alone.
+	anomalyRows, err := db.DB.Query(
+		`SELECT a.source_ip, a.event_time, a.is_anomaly, a.reason, a.confidence_score, a.severity
+		 FROM anomalies a
+		 JOIN uploads u ON u.id = a.upload_id
+		 WHERE a.upload_id = $1 AND u.user_id = $2
+		 ORDER BY a.confidence_score DESC`,
+		uploadID, userID,
+	)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer anomalyRows.Close()
+
+	anomalies := []Anomaly{}
+	for anomalyRows.Next() {
+		var a Anomaly
+		if err := anomalyRows.Scan(&a.SourceIP, &a.EventTime, &a.IsAnomaly, &a.Reason, &a.ConfidenceScore, &a.Severity); err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		anomalies = append(anomalies, a)
+	}
+
 	resp := EventsResponse{
-		Events:       events,
-		SkippedLines: skippedLines,
-		Summary:      buildSummary(events, skippedCount),
+		Events:        events,
+		SkippedLines:  skippedLines,
+		Summary:       buildSummary(events, skippedCount),
+		ThreatSummary: threatSummary,
+		ThreatStatus:  threatStatus,
+		ThreatError:   threatError,
+		Anomalies:     anomalies,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -172,8 +215,6 @@ func buildTimeline(events []parser.LogEntry, minTime, maxTime time.Time) []Timel
 	span := maxTime.Sub(minTime)
 	bucketWidth := span / timelineBuckets
 	if bucketWidth <= 0 {
-		// All events landed in the same instant (or span too small to
-		// divide) -- a single bucket covers everything.
 		return []TimelineBucket{{BucketStart: minTime, Count: len(events)}}
 	}
 
