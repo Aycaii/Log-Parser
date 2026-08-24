@@ -13,19 +13,25 @@ import "net/http"
 const frontendOrigin = "http://localhost:3000"
 
 func withCORS(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", frontendOrigin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+    return func(w http.ResponseWriter, r *http.Request) {
+        // 1. Explicitly tell the browser that http://localhost:3000 is allowed to read responses.
+        w.Header().Set("Access-Control-Allow-Origin", frontendOrigin)
+        
+        // 2. Allow credentials (cookies/session headers) to be sent across origins.
+        w.Header().Set("Access-Control-Allow-Credentials", "true")
+        
+        // 3. Declare allowed HTTP methods and custom headers.
+        w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 
-		// Preflight: the browser sends OPTIONS before any POST carrying a
-		// custom header (X-CSRF-Token). Answer it and stop.
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+        // 4. Handle Preflight: Browsers send an automatic OPTIONS request before POSTs 
+        // that carry custom headers (like X-CSRF-Token). This answers "Yes, I allow this" 
+        // with HTTP 204 (No Content) so the browser can immediately send the real POST.
+        if r.Method == http.MethodOptions {
+            w.WriteHeader(http.StatusNoContent)
+            return
+        }
 
-		next(w, r)
-	}
+        next(w, r)
+    }
 }
