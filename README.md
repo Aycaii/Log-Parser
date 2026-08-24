@@ -17,6 +17,12 @@ A full-stack log analysis tool for SOC analysts: upload an access log, get it pa
 
 ## Running locally
 
+### Quick start
+
+To run the application: 
+```bash
+./run.sh
+```
 ### Prerequisites
 
 - [Go](https://go.dev/) 1.27+
@@ -24,14 +30,7 @@ A full-stack log analysis tool for SOC analysts: upload an access log, get it pa
 - PostgreSQL running locally
 - A free [Gemini API key](https://aistudio.google.com/apikey)
 
-### Quick start
-
-To run the application: 
-```bash
-./run.sh
-```
-
-If not configured run the following: 
+After obtaining a Gemini API key run the following: 
 ```bash
 export GEMINI_API_KEY=your-key-here   # optional, enables AI anomaly detection
 ```
