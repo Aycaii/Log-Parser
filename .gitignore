@@ -12,6 +12,8 @@ build/
 .env*.local
 
 .claude/
+client/AGENTS.md
+client/CLAUDE.md
 
 # Editor / OS
 .DS_Store
