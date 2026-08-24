@@ -28,7 +28,6 @@ A full-stack log analysis tool for SOC analysts: upload an access log, get it pa
 
 To run the application: 
 ```bash
-export GEMINI_API_KEY=your-key-here   # optional, enables AI anomaly detection
 ./run.sh
 ```
 
