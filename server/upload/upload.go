@@ -4,18 +4,22 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"logparseapp/auth"
 	"logparseapp/db"
+	"logparseapp/parser"
 )
 
 type UploadMeta struct {
-	ID          int64     `json:"id"`
-	Filename    string    `json:"filename"`
-	ContentType string    `json:"content_type"`
-	SizeBytes   int64     `json:"size_bytes"`
-	UploadedAt  time.Time `json:"uploaded_at"`
+	ID           int64     `json:"id"`
+	Filename     string    `json:"filename"`
+	ContentType  string    `json:"content_type"`
+	SizeBytes    int64     `json:"size_bytes"`
+	UploadedAt   time.Time `json:"uploaded_at"`
+	ParsedCount  int       `json:"parsed_count"`
+	SkippedCount int       `json:"skipped_count"`
 }
 
 // r.FormValue (used inside auth.Authorize) parses the multipart form itself
@@ -56,14 +60,49 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 
-	var meta UploadMeta
-	err = db.DB.QueryRow(
-		`INSERT INTO uploads (user_id, filename, content_type, size_bytes, content)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, filename, content_type, size_bytes, uploaded_at`,
-		userID, header.Filename, contentType, len(content), content,
-	).Scan(&meta.ID, &meta.Filename, &meta.ContentType, &meta.SizeBytes, &meta.UploadedAt)
+	entries, skippedLines, err := parser.ParseLogFile(content)
 	if err != nil {
+		http.Error(w, "Failed to parse file", http.StatusInternalServerError)
+		return
+	}
+
+	tx, err := db.DB.Begin()
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	var meta UploadMeta
+	err = tx.QueryRow(
+		`INSERT INTO uploads (user_id, filename, content_type, size_bytes, content, parsed_count, skipped_count, skipped_lines)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id, filename, content_type, size_bytes, uploaded_at, parsed_count, skipped_count`,
+		userID, header.Filename, contentType, len(content), content, len(entries), len(skippedLines), strings.Join(skippedLines, "\n"),
+	).Scan(&meta.ID, &meta.Filename, &meta.ContentType, &meta.SizeBytes, &meta.UploadedAt, &meta.ParsedCount, &meta.SkippedCount)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	stmt, err := tx.Prepare(
+		`INSERT INTO events (upload_id, source_ip, event_time, method, url, status_code, bytes_sent)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+	)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	for _, e := range entries {
+		if _, err := stmt.Exec(meta.ID, e.SourceIP, e.Timestamp, e.Method, e.URL, e.StatusCode, e.BytesSent); err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -73,7 +112,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func ListUploads(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
@@ -85,7 +124,7 @@ func ListUploads(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := db.DB.Query(
-		`SELECT id, filename, content_type, size_bytes, uploaded_at
+		`SELECT id, filename, content_type, size_bytes, uploaded_at, parsed_count, skipped_count
 		 FROM uploads WHERE user_id = $1 ORDER BY uploaded_at DESC`,
 		userID,
 	)
@@ -98,7 +137,7 @@ func ListUploads(w http.ResponseWriter, r *http.Request) {
 	uploads := []UploadMeta{}
 	for rows.Next() {
 		var u UploadMeta
-		if err := rows.Scan(&u.ID, &u.Filename, &u.ContentType, &u.SizeBytes, &u.UploadedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Filename, &u.ContentType, &u.SizeBytes, &u.UploadedAt, &u.ParsedCount, &u.SkippedCount); err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}

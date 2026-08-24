@@ -6,6 +6,8 @@
   --muted: #8b9ab3;
   --accent: #4f8cff;
   --danger: #ff6b6b;
+  --good: #3ecf8e;
+  --warning: #f5b642;
   --radius: 10px;
 }
 
@@ -28,7 +30,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
   color: inherit;
 }
@@ -160,7 +163,7 @@ input {
 
 .uploads {
   padding: 24px 20px;
-  max-width: 720px;
+  max-width: 960px;
 }
 
 .uploads-toolbar {
@@ -192,4 +195,215 @@ input {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.upload-row {
+  cursor: pointer;
+}
+
+.upload-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.expand-arrow {
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+}
+
+/* Tabs, filter bar, and table all live inside one bordered card, so the
+   tabs read as attached to the table rather than floating above it. */
+.table-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tab-strip {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-strip button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab-strip button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Each filter's dropdown + value + remove button live inside one boxed
+   rectangle, so a filter reads as one unit even with several stacked. */
+.filter-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.filter-toolbar select,
+.filter-toolbar input,
+.sort-toolbar select {
+  padding: 6px 9px;
+  background: #0d131d;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.filter-toolbar select option,
+.sort-toolbar select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.sort-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.btn.small {
+  width: auto;
+  padding: 5px 10px;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.skipped-lines {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.events-panel {
+  padding: 18px 4px 8px;
+}
+
+.events-panel .msg {
+  margin-bottom: 12px;
+}
+
+.stat-line {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.stat-tile .value {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.stat-tile .label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Single-series count-per-bucket bars: one hue (--accent) is enough, no
+   legend needed for one series. A 2px surface gap separates adjacent bars. */
+.timeline {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 84px;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-bar {
+  flex: 1;
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+}
+
+.timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin: 6px 0 22px;
+}
+
+/* Status is a severity signal, not an arbitrary category, so it gets the
+   status palette -- always dot + label together, never color alone. */
+.status-chips {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  font-size: 0.85rem;
+}
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.good {
+  background: var(--good);
+}
+
+.status-dot.neutral {
+  background: var(--muted);
+}
+
+.status-dot.warning {
+  background: var(--warning);
+}
+
+.status-dot.critical {
+  background: var(--danger);
+}
+
+
+.table-card-body {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.table-card-body .uploads-table th,
+.table-card-body .uploads-table td {
+  font-size: 0.82rem;
+  padding: 8px 10px;
+}
+
+.table-card-body .uploads-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
 }
