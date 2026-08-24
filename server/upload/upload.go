@@ -24,9 +24,6 @@ type UploadMeta struct {
 	SkippedCount int       `json:"skipped_count"`
 }
 
-// r.FormValue (used inside auth.Authorize) parses the multipart form itself
-// if it hasn't been parsed yet, but with the default in-memory cap -- calling
-// ParseMultipartForm first with our own limit avoids relying on that default.
 func UploadFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -109,10 +106,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bonus: AI-based anomaly detection over the entries just parsed. This
-	// runs after the commit above and is best-effort -- a missing API key
-	// or a failed call must not undo an upload that already succeeded, so
-	// it's logged and swallowed rather than surfaced to the response.
+	// AI-based anomaly detection over the entries just parsed. This runs after the commit above
 	if len(entries) > 0 {
 		if report, err := threatdetect.AnalyzeLogsWithAI(entries); err != nil {
 			log.Printf("anomaly detection skipped for upload %d: %v", meta.ID, err)
