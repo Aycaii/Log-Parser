@@ -1,17 +1,13 @@
 // Package threatdetect sends parsed log entries to an LLM (Gemini) and asks
 // it to flag anomalies.
 //
-// KNOWN LIMITATION: A whole uploaded file can't be handed to the model in one prompt
-// To work around this, entries are split into fixed-size batches
-// (batchSize) and each batch is sent as its own independent request
-// run several at a time up to maxConcurrency.
-//
-// The model only ever sees one batch's worth of lines at a time,
-// with no memory of the batches before or after it. 
-// A pattern only visible across thousands of log files will not be detected with this particular request format. 
-// A paid tier with a larger context window could raise batchSize enough to cover far more of a
-// file per request. 
-
+// KNOWN LIMITATION: a whole uploaded file can't fit in one prompt, since
+// Gemini's free tier keeps the context window and requests-per-minute rate
+// tight. Entries are split into fixed-size batches and analyzed separately
+// instead, so the model never sees more than one batch's lines at a time --
+// a pattern that only shows up spread thinly across many batches won't be
+// caught, since results are just concatenated afterward, not re-analyzed
+// together. A paid tier or a model with bigger limits would reduce this.
 package threatdetect
 
 import (
@@ -72,10 +68,10 @@ type batchOutcome struct {
 
 // AnalyzeLogsWithAI sends every parsed entry to an LLM and asks it to flag
 // anomalies, batching batchSize entries per request since a single prompt
-// can't hold an arbitrarily large file. 
-
-// Uses Gemini's endpoint (https://ai.google.dev/gemini-api/docs/openai).
-// Get a free key at https://aistudio.google.com/apikey.
+// can't hold an arbitrarily large file (see the package comment above for
+// what that costs). Uses Gemini's endpoint
+// (https://ai.google.dev/gemini-api/docs/openai) -- get a free key at
+// https://aistudio.google.com/apikey.
 func AnalyzeLogsWithAI(entries []parser.LogEntry) (*AIThreatResponse, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
