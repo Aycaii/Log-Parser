@@ -7,14 +7,6 @@ A full-stack log analysis tool for SOC analysts: upload an access log, get it pa
 - **Database**: PostgreSQL
 - **AI**: Google Gemini, used for anomaly detection
 
-## Features
-
-- Basic Username/password auth 
-- Upload `.log`/`.txt`/`.json` access log files
-- Server-side parsing into structured events (source IP, timestamp, method, URL, status code, bytes sent)
-- Per-upload dashboard: events table (filterable/sortable), request timeline chart, upload history
-- AI-based anomaly detection per upload: each flagged entry gets a plain-English reason, a confidence score, and a severity (`critical`/`high`/`medium`/`low`/`informational`), shown as badges in the UI and filterable by severity
-
 ## Running locally
 
 ### Quick start
@@ -34,10 +26,18 @@ After obtaining a Gemini API key run the following:
 ```bash
 export GEMINI_API_KEY=your-key-here   # optional, enables AI anomaly detection
 ```
+## Features
 
-This creates the `logparseapp` database if it doesn't exist yet, installs client dependencies on first run, and starts the Go API (`http://localhost:8000`) and the Next.js client (`http://localhost:3000`) together. Ctrl-C stops both.
+- Basic Username/password auth 
+- Upload `.log`/`.txt`/`.json` access log files
+- Server-side parsing into structured events (source IP, timestamp, method, URL, status code, bytes sent)
+- Per-upload dashboard: events table (filterable/sortable), request timeline chart, upload history
+- AI-based anomaly detection per upload: each flagged entry gets a plain-English reason, a confidence score, and a severity (`critical`/`high`/`medium`/`low`/`informational`), shown as badges in the UI and filterable by severity
 
-Environment variables (all optional, exported before running `run.sh`):
+<details>
+<summary>Running each piece manually</summary>
+
+**Environment variables** (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -46,10 +46,7 @@ Environment variables (all optional, exported before running `run.sh`):
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Override the Gemini model used |
 | `NEXT_PUBLIC_API_BASE` | `http://localhost:8000` | Where the client looks for the API |
 
-<details>
-<summary>Running each piece manually</summary>
-
-**Database** — the server applies the schema automatically on boot, so no migration step is needed:
+**Database** the server applies the schema automatically on boot, so no migration step is needed:
 
 ```bash
 createdb logparseapp
