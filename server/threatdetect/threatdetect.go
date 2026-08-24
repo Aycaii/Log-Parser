@@ -1,3 +1,17 @@
+// Package threatdetect sends parsed log entries to an LLM (Gemini) and asks
+// it to flag anomalies.
+//
+// KNOWN LIMITATION: A whole uploaded file can't be handed to the model in one prompt
+// To work around this, entries are split into fixed-size batches
+// (batchSize) and each batch is sent as its own independent request
+// run several at a time up to maxConcurrency.
+//
+// The model only ever sees one batch's worth of lines at a time,
+// with no memory of the batches before or after it. 
+// A pattern only visible across thousands of log files will not be detected with this particular request format. 
+// A paid tier with a larger context window could raise batchSize enough to cover far more of a
+// file per request. 
+
 package threatdetect
 
 import (
@@ -5,13 +19,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"logparseapp/parser"
 )
+
+const batchSize = 50
+
+const maxConcurrency = 5
 
 type AnomalyReport struct {
 	SourceIP        string  `json:"source_ip"`
@@ -36,7 +56,7 @@ var validSeverities = map[string]bool{
 }
 
 // normalizeSeverity guards against the model drifting from the requested
-// enum (wrong case, a synonym, or omitting the field). 
+// enum (wrong case, a synonym, or omitting the field).
 func normalizeSeverity(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if validSeverities[s] {
@@ -45,9 +65,16 @@ func normalizeSeverity(s string) string {
 	return "informational"
 }
 
+type batchOutcome struct {
+	report *AIThreatResponse
+	err    error
+}
 
-// AnalyzeLogsWithAI sends a sample of parsed entries to an LLM and asks it to flag anomalies. 
-// Uses Gemini's endpoint (https://ai.google.dev/gemini-api/docs/openai) G
+// AnalyzeLogsWithAI sends every parsed entry to an LLM and asks it to flag
+// anomalies, batching batchSize entries per request since a single prompt
+// can't hold an arbitrarily large file. 
+
+// Uses Gemini's endpoint (https://ai.google.dev/gemini-api/docs/openai).
 // Get a free key at https://aistudio.google.com/apikey.
 func AnalyzeLogsWithAI(entries []parser.LogEntry) (*AIThreatResponse, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
@@ -59,13 +86,63 @@ func AnalyzeLogsWithAI(entries []parser.LogEntry) (*AIThreatResponse, error) {
 		model = "gemini-3.6-flash"
 	}
 
-	maxEntries := 50
-	if len(entries) < maxEntries {
-		maxEntries = len(entries)
-	}
-	sampleEntries := entries[:maxEntries]
+	totalBatches := (len(entries) + batchSize - 1) / batchSize
+	outcomes := make([]batchOutcome, totalBatches)
 
-	logJSON, err := json.Marshal(sampleEntries)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrency)
+
+	for b := 0; b < totalBatches; b++ {
+		start := b * batchSize
+		end := start + batchSize
+		if end > len(entries) {
+			end = len(entries)
+		}
+
+		sem <- struct{}{} // blocks once maxConcurrency workers are in flight
+		wg.Add(1)
+		go func(idx int, batch []parser.LogEntry) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			report, err := analyzeBatch(batch, apiKey, model)
+			outcomes[idx] = batchOutcome{report: report, err: err}
+		}(b, entries[start:end])
+	}
+
+	wg.Wait()
+
+	var anomalies []AnomalyReport
+	var batchSummaries []string
+	var lastErr error
+	failedBatches := 0
+
+	for i, o := range outcomes {
+		if o.err != nil {
+			log.Printf("threatdetect: batch %d/%d failed: %v", i+1, totalBatches, o.err)
+			lastErr = o.err
+			failedBatches++
+			continue
+		}
+		anomalies = append(anomalies, o.report.Anomalies...)
+		batchSummaries = append(batchSummaries, o.report.Summary)
+	}
+
+	if totalBatches > 0 && failedBatches == totalBatches {
+		return nil, fmt.Errorf("all %d batch(es) failed, e.g.: %w", totalBatches, lastErr)
+	}
+
+	summary := strings.Join(batchSummaries, " ")
+	if failedBatches > 0 {
+		summary = fmt.Sprintf("(%d of %d batches failed to analyze) %s", failedBatches, totalBatches, summary)
+	}
+
+	return &AIThreatResponse{Summary: summary, Anomalies: anomalies}, nil
+}
+
+// analyzeBatch sends a single batch (at most batchSize entries) to the
+// model and returns its parsed report.
+func analyzeBatch(entries []parser.LogEntry, apiKey, model string) (*AIThreatResponse, error) {
+	logJSON, err := json.Marshal(entries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal log sample: %w", err)
 	}
