@@ -22,8 +22,6 @@ export default function LoginPage() {
     try {
       if (mode === "register") {
         await register(username, password);
-        // Registering does not log you in. The Go handler Register() only stores the
-        // hash. Drop back to the login form with the username prefilled.
         setMode("login");
         setPassword("");
         setNotice("Account created. Sign in to continue.");
@@ -31,8 +29,6 @@ export default function LoginPage() {
       }
 
       await login(username, password);
-      // The username is needed on later requests because the Go handlers look
-      // the user up by form value rather than deriving it from the session.
       sessionStorage.setItem("username", username);
       router.push("/dashboard");
     } catch (err) {

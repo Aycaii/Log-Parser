@@ -162,16 +162,14 @@ function AnomalyBadge({ score }: { score: number }) {
   );
 }
 
-// Ordered most to least severe, for the filter row.
+
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"];
 
 function SeverityBadge({ severity }: { severity: Severity }) {
   return <span className="status-chip">{severity}</span>;
 }
 
-// AI detection runs in the background after /upload responds (see
-// upload.go), so a freshly uploaded file's threat_status is "pending" until
-// that goroutine resolves it.
+// AI detection runs in the background after /upload responds (see upload.go)
 function findingsStatusDot(status: ThreatStatus): string {
   switch (status) {
     case "error":

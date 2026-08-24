@@ -21,9 +21,6 @@ func checkPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
-// containsSpace reports whether s has any whitespace character anywhere in
-// it (not just leading/trailing) -- unicode.IsSpace so tabs/newlines/unicode
-// spaces are caught too, not just the literal " " character.
 func containsSpace(s string) bool {
 	return strings.IndexFunc(s, unicode.IsSpace) != -1
 }

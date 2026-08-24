@@ -106,12 +106,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AI-based anomaly detection over the entries just parsed. Runs in the
-	// background so the client gets its upload response (and can see the
-	// parsed events) right away instead of waiting on a slow external API
-	// call -- threat_status starts as 'pending' (schema.sql default) and
-	// the frontend polls /uploads/events until this goroutine resolves it
-	// to 'ok', 'error', or 'skipped'.
+	// AI-based anomaly detection over the entries just parsed. 
 	go func() {
 		if len(entries) == 0 {
 			if err := setThreatStatus(meta.ID, "skipped", ""); err != nil {

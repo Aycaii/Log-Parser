@@ -36,8 +36,7 @@ var validSeverities = map[string]bool{
 }
 
 // normalizeSeverity guards against the model drifting from the requested
-// enum (wrong case, a synonym, or omitting the field) -- callers and the DB
-// column both assume one of the five known values.
+// enum (wrong case, a synonym, or omitting the field). 
 func normalizeSeverity(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if validSeverities[s] {
@@ -46,11 +45,10 @@ func normalizeSeverity(s string) string {
 	return "informational"
 }
 
-// AnalyzeLogsWithAI sends a sample of parsed entries to an LLM and asks it
-// to flag anomalies. Uses Gemini's OpenAI-compatible endpoint
-// (https://ai.google.dev/gemini-api/docs/openai) so the request/response
-// shape below is unchanged from a native OpenAI call -- get a free key at
-// https://aistudio.google.com/apikey.
+
+// AnalyzeLogsWithAI sends a sample of parsed entries to an LLM and asks it to flag anomalies. 
+// Uses Gemini's endpoint (https://ai.google.dev/gemini-api/docs/openai) G
+// Get a free key at https://aistudio.google.com/apikey.
 func AnalyzeLogsWithAI(entries []parser.LogEntry) (*AIThreatResponse, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {

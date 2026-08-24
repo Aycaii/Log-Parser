@@ -36,8 +36,6 @@ type Anomaly struct {
 	IsAnomaly       bool    `json:"is_anomaly"`
 	Reason          string  `json:"reason"`
 	ConfidenceScore float64 `json:"confidence_score"`
-	// One of "critical", "high", "medium", "low", "informational" -- see
-	// threatdetect.normalizeSeverity.
 	Severity string `json:"severity"`
 }
 
@@ -46,7 +44,6 @@ type EventsResponse struct {
 	SkippedLines  []string          `json:"skipped_lines"`
 	Summary       Summary           `json:"summary"`
 	ThreatSummary string            `json:"threat_summary"`
-	// One of "pending", "ok", "error", "skipped" -- see setThreatStatus.
 	ThreatStatus string    `json:"threat_status"`
 	ThreatError  string    `json:"threat_error"`
 	Anomalies    []Anomaly `json:"anomalies"`

@@ -28,10 +28,7 @@ var logPattern = regexp.MustCompile(
 
 // ParseLogFile scans rawContent line by line and regex-matches each line
 // against the common log format. Lines that don't match, or whose timestamp
-// fails to parse, are returned verbatim in skippedLines rather than included
-// with a guessed value -- a silently wrong timestamp is worse than an honest
-// skip for a SOC-facing tool, and keeping the raw text lets the UI show the
-// analyst exactly what didn't parse.
+// fails to parse, are returned in skippedLines.
 func ParseLogFile(rawContent []byte) (entries []LogEntry, skippedLines []string, err error) {
 	scanner := bufio.NewScanner(bytes.NewReader(rawContent))
 
@@ -47,21 +44,18 @@ func ParseLogFile(rawContent []byte) (entries []LogEntry, skippedLines []string,
 			continue
 		}
 
-		// 1. Parse Timestamp (Common log layout: 02/Jan/2006:15:04:05 -0700)
 		parsedTime, err := time.Parse("02/Jan/2006:15:04:05 -0700", matches[2])
 		if err != nil {
 			skippedLines = append(skippedLines, line)
 			continue
 		}
 
-		// 2. Parse Status Code
 		statusCode, err := strconv.Atoi(matches[5])
 		if err != nil {
 			skippedLines = append(skippedLines, line)
 			continue
 		}
 
-		// 3. Parse Bytes Sent
 		var bytesSent int64
 		if matches[6] != "-" {
 			bytesSent, err = strconv.ParseInt(matches[6], 10, 64)

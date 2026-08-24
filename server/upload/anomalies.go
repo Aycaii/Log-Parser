@@ -29,8 +29,7 @@ func storeAnomalies(uploadID int64, report *threatdetect.AIThreatResponse) error
 }
 
 // setThreatStatus records that detection did not produce a report: either it
-// was skipped (nothing to analyze) or it errored out (missing API key,
-// timed-out/failed request, unparseable AI response).
+// was skipped or it errored out 
 func setThreatStatus(uploadID int64, status, errMsg string) error {
 	_, err := db.DB.Exec(
 		`UPDATE uploads SET threat_status = $1, threat_error = $2 WHERE id = $3`,
