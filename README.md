@@ -11,10 +11,12 @@ A full-stack log analysis tool for SOC analysts: upload an access log, get it pa
 
 ### Quick start
 
-To run the application: 
+Run the Application: 
 ```bash
 ./run.sh
 ```
+Open `http://localhost:3000`
+
 ### Prerequisites
 
 - [Go](https://go.dev/) 1.27+
