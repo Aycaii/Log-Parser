@@ -22,7 +22,7 @@ export default function LoginPage() {
     try {
       if (mode === "register") {
         await register(username, password);
-        // Registering does not log you in -- the Go handler only stores the
+        // Registering does not log you in. The Go handler Register() only stores the
         // hash. Drop back to the login form with the username prefilled.
         setMode("login");
         setPassword("");

@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"log"
+	"strings"
+	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -17,6 +19,13 @@ func hashPassword(password string) (string, error) {
 func checkPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
+}
+
+// containsSpace reports whether s has any whitespace character anywhere in
+// it (not just leading/trailing) -- unicode.IsSpace so tabs/newlines/unicode
+// spaces are caught too, not just the literal " " character.
+func containsSpace(s string) bool {
+	return strings.IndexFunc(s, unicode.IsSpace) != -1
 }
 
 //generate a cryptographically pseudorandom bitstream to use as a session token

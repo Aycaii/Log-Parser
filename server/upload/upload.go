@@ -106,14 +106,34 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AI-based anomaly detection over the entries just parsed. This runs after the commit above
-	if len(entries) > 0 {
-		if report, err := threatdetect.AnalyzeLogsWithAI(entries); err != nil {
-			log.Printf("anomaly detection skipped for upload %d: %v", meta.ID, err)
-		} else if err := storeAnomalies(meta.ID, report); err != nil {
-			log.Printf("failed to store anomaly report for upload %d: %v", meta.ID, err)
+	// AI-based anomaly detection over the entries just parsed. Runs in the
+	// background so the client gets its upload response (and can see the
+	// parsed events) right away instead of waiting on a slow external API
+	// call -- threat_status starts as 'pending' (schema.sql default) and
+	// the frontend polls /uploads/events until this goroutine resolves it
+	// to 'ok', 'error', or 'skipped'.
+	go func() {
+		if len(entries) == 0 {
+			if err := setThreatStatus(meta.ID, "skipped", ""); err != nil {
+				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
+			}
+			return
 		}
-	}
+		report, err := threatdetect.AnalyzeLogsWithAI(entries)
+		if err != nil {
+			log.Printf("anomaly detection failed for upload %d: %v", meta.ID, err)
+			if err := setThreatStatus(meta.ID, "error", err.Error()); err != nil {
+				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
+			}
+			return
+		}
+		if err := storeAnomalies(meta.ID, report); err != nil {
+			log.Printf("failed to store anomaly report for upload %d: %v", meta.ID, err)
+			if err := setThreatStatus(meta.ID, "error", err.Error()); err != nil {
+				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
+			}
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(meta)

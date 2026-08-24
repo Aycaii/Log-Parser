@@ -13,6 +13,9 @@ import {
   type LogEntry,
   type CountEntry,
   type TimelineBucket,
+  type Anomaly,
+  type ThreatStatus,
+  type Severity,
 } from "@/lib/api";
 
 function formatSize(bytes: number) {
@@ -149,8 +152,153 @@ function buildLiveSummary(events: LogEntry[]): LiveSummary {
 // Renders the parsed view for one upload: a timeline of event counts, a
 // status-code breakdown, top talkers/paths, a filterable event table, and a
 // tab to see the raw lines the parser skipped.
+function AnomalyBadge({ score }: { score: number }) {
+  const cls = score >= 0.75 ? "critical" : score >= 0.4 ? "warning" : "neutral";
+  return (
+    <span className={`status-chip`}>
+      <span className={`status-dot ${cls}`} />
+      {(score * 100).toFixed(0)}% confidence
+    </span>
+  );
+}
+
+// Ordered most to least severe, for the filter row.
+const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"];
+
+function SeverityBadge({ severity }: { severity: Severity }) {
+  return <span className="status-chip">{severity}</span>;
+}
+
+// AI detection runs in the background after /upload responds (see
+// upload.go), so a freshly uploaded file's threat_status is "pending" until
+// that goroutine resolves it.
+function findingsStatusDot(status: ThreatStatus): string {
+  switch (status) {
+    case "error":
+      return "critical";
+    case "pending":
+      return "warning";
+    default:
+      return "good";
+  }
+}
+
+function FindingsPanel({
+  status,
+  error,
+  summary,
+  anomalies,
+}: {
+  status: ThreatStatus;
+  error: string;
+  summary: string;
+  anomalies: Anomaly[];
+}) {
+  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(
+    () => new Set(SEVERITIES),
+  );
+
+  function toggleSeverity(sev: Severity) {
+    setSeverityFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(sev)) {
+        next.delete(sev);
+      } else {
+        next.add(sev);
+      }
+      return next;
+    });
+  }
+
+  const flagged = anomalies.filter((a) => a.is_anomaly);
+  const filteredFlagged = flagged.filter((a) => severityFilter.has(a.severity));
+
+  if (status === "pending") {
+    return <p className="sub">Pending AI analysis</p>;
+  }
+
+  if (status === "skipped") {
+    return (
+      <p className="sub">
+        No log lines were parsed from this file, so threat detection did not
+        run.
+      </p>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <p className="msg">
+        Threat detection failed and produced no report: {error || "unknown error"}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {summary && <p className="sub">{summary}</p>}
+      {flagged.length === 0 ? (
+        <p className="sub">Detection ran and found no anomalies.</p>
+      ) : (
+        <>
+          <div className="filter-toolbar">
+            {SEVERITIES.map((sev) => (
+              <button
+                key={sev}
+                type="button"
+                className={`severity-toggle ${severityFilter.has(sev) ? "active" : ""}`}
+                onClick={() => toggleSeverity(sev)}
+              >
+                {sev}
+              </button>
+            ))}
+          </div>
+          {filteredFlagged.length === 0 ? (
+            <p className="sub">No anomalies match the selected severities.</p>
+          ) : (
+            <table className="uploads-table">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Time</th>
+                  <th>Source IP</th>
+                  <th>Reason</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFlagged.map((a, i) => (
+                  <tr key={i}>
+                    <td>
+                      <SeverityBadge severity={a.severity} />
+                    </td>
+                    <td>{a.event_time}</td>
+                    <td>{a.source_ip}</td>
+                    <td>{a.reason}</td>
+                    <td>
+                      <AnomalyBadge score={a.confidence_score} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 function EventsPanel({ data }: { data: EventsResponse }) {
-  const { summary, events, skipped_lines } = data;
+  const {
+    summary,
+    events,
+    skipped_lines,
+    threat_summary,
+    threat_status,
+    threat_error,
+    anomalies,
+  } = data;
   const [tab, setTab] = useState<"events" | "skipped">("events");
   const [filters, setFilters] = useState<FilterRow[]>([]);
   const [sortField, setSortField] = useState<FilterField>("timestamp");
@@ -179,8 +327,6 @@ function EventsPanel({ data }: { data: EventsResponse }) {
     [events, filters, sortField, sortDir],
   );
 
-  // Timeline + status chips track whatever is currently filtered in, not
-  // the whole file -- recomputed client-side since filtering happens here.
   const liveSummary = useMemo(() => buildLiveSummary(filteredEvents), [filteredEvents]);
 
   if (summary.total_events === 0 && skipped_lines.length === 0) {
@@ -357,6 +503,21 @@ function EventsPanel({ data }: { data: EventsResponse }) {
           )}
         </div>
       </div>
+
+      <div className="table-card">
+        <div className="section-header">
+          <span className={`status-dot ${findingsStatusDot(threat_status)}`} />
+          Findings ({anomalies.filter((a) => a.is_anomaly).length})
+        </div>
+        <div className="table-card-body">
+          <FindingsPanel
+            status={threat_status}
+            error={threat_error}
+            summary={threat_summary}
+            anomalies={anomalies}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -385,9 +546,6 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    // Cheap client-side guard so a direct visit to /dashboard does not render
-    // an empty shell for someone who never logged in. Not a security control:
-    // the API re-checks the session on every protected request.
     const name = sessionStorage.getItem("username");
     if (!name || !readCsrfToken()) {
       router.replace("/login");
@@ -399,7 +557,6 @@ export default function DashboardPage() {
 
   async function onLogout() {
     if (username) {
-      // A failed logout should not strand the user on a page they can't leave.
       await logout(username).catch(() => {});
     }
     sessionStorage.removeItem("username");
@@ -444,6 +601,27 @@ export default function DashboardPage() {
       setEventsLoadingId(null);
     }
   }
+
+  const eventsByIdRef = useRef(eventsById);
+  useEffect(() => {
+    eventsByIdRef.current = eventsById;
+  }, [eventsById]);
+
+  // AI-based anomaly detection runs in the background after upload
+  useEffect(() => {
+    if (expandedId == null || !username) return;
+
+    const interval = setInterval(async () => {
+      if (eventsByIdRef.current[expandedId]?.threat_status !== "pending") return;
+      try {
+        const fresh = await getUploadEvents(expandedId, username);
+        setEventsById((prev) => ({ ...prev, [expandedId]: fresh }));
+      } catch {
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [expandedId, username]);
 
   if (!username) return null;
 

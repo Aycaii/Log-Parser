@@ -18,6 +18,11 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
+	if containsSpace(username) || containsSpace(password) {
+		http.Error(w, "Username and password cannot contain spaces", http.StatusNotAcceptable)
+		return
+	}
+
 	if len(username) < 5 || len(password) < 5 {
 		er := http.StatusNotAcceptable
 		http.Error(w, "Invalid username/password", er)

@@ -6,12 +6,11 @@ export const API_BASE =
 
 /**
  * The Go handlers read fields with r.FormValue, which parses
- * application/x-www-form-urlencoded -- not JSON. So we post a URLSearchParams
- * body rather than JSON.stringify.
+ * application/x-www-form-urlencoded. 
  *
  * credentials: "include" is required: the API is on a different port, so the
- * browser treats it as cross-origin and will not store the session_token
- * cookie (or send it back) without it.
+ * browser treats it as cross-origin and will not store or send the session_token
+ * cookie without it.
  */
 async function post(path: string, body: Record<string, string>, csrf?: string) {
   const headers: Record<string, string> = {
@@ -76,12 +75,30 @@ export type Summary = {
   status_breakdown: CountEntry[];
 };
 
+export type Severity = "critical" | "high" | "medium" | "low" | "informational";
+
+export type Anomaly = {
+  source_ip: string;
+  event_time: string;
+  is_anomaly: boolean;
+  reason: string;
+  confidence_score: number;
+  severity: Severity;
+};
+
+export type ThreatStatus = "pending" | "ok" | "error" | "skipped";
+
 export type EventsResponse = {
   events: LogEntry[];
   skipped_lines: string[];
   summary: Summary;
+  threat_summary: string;
+  threat_status: ThreatStatus;
+  threat_error: string;
+  anomalies: Anomaly[];
 };
 
+// For making authenticated GET requests
 async function authedGet<T>(path: string, params: Record<string, string>): Promise<T> {
   const csrf = readCsrfToken();
   const headers: Record<string, string> = {};
@@ -109,9 +126,8 @@ export function getUploadEvents(uploadId: number, username: string) {
 }
 
 /**
- * The Go handler reads this as multipart/form-data (r.ParseMultipartForm),
- * so username has to ride along as a form field here too -- Authorize()
- * looks it up the same way it does for the urlencoded endpoints.
+ * The Go handler reads this as multipart/form-data (r.ParseMultipartForm).
+ * Sends a real file using FormData
  */
 export async function uploadFile(username: string, file: File) {
   const csrf = readCsrfToken();
@@ -137,11 +153,8 @@ export async function uploadFile(username: string, file: File) {
 }
 
 /**
- * The session cookie is HttpOnly so JS cannot see it -- that is the point.
- * The CSRF cookie deliberately is not, because we have to echo it back in the
- * X-CSRF-Token header for the double-submit check in Authorize(). Its presence
- * doubles as our client-side "probably logged in" hint; the server is still the
- * only thing that actually decides.
+ * The session cookie is HttpOnly so JS cannot see it. 
+ * Reads the browser-accessible CSRF cookie so it can be echoed in a request header. 
  */
 export function readCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
