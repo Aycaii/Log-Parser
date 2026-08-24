@@ -3,6 +3,7 @@ package upload
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"logparseapp/auth"
 	"logparseapp/db"
 	"logparseapp/parser"
+	"logparseapp/threatdetect"
 )
 
 type UploadMeta struct {
@@ -105,6 +107,18 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Bonus: AI-based anomaly detection over the entries just parsed. This
+	// runs after the commit above and is best-effort -- a missing API key
+	// or a failed call must not undo an upload that already succeeded, so
+	// it's logged and swallowed rather than surfaced to the response.
+	if len(entries) > 0 {
+		if report, err := threatdetect.AnalyzeLogsWithAI(entries); err != nil {
+			log.Printf("anomaly detection skipped for upload %d: %v", meta.ID, err)
+		} else if err := storeAnomalies(meta.ID, report); err != nil {
+			log.Printf("failed to store anomaly report for upload %d: %v", meta.ID, err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

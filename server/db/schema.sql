@@ -74,3 +74,24 @@ CREATE TABLE IF NOT EXISTS events (
 -- Backs both the per-upload event list and the timeline summary, which both
 -- read in event_time order.
 CREATE INDEX IF NOT EXISTS events_upload_idx ON events (upload_id, event_time);
+
+-- AI-based anomaly detection (bonus). Best-effort at upload time: a missing
+-- OPENAI_API_KEY or a failed call just leaves these empty rather than
+-- failing the upload -- see threatdetect.AnalyzeLogsWithAI and its caller
+-- in upload.go.
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS threat_summary TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS anomalies (
+    id               BIGSERIAL        PRIMARY KEY,
+    upload_id        BIGINT           NOT NULL REFERENCES uploads (id) ON DELETE CASCADE,
+    source_ip        TEXT             NOT NULL,
+    -- Stored as the model returned it (TEXT, not TIMESTAMPTZ) -- an LLM
+    -- response isn't a trusted, guaranteed-parseable timestamp source the
+    -- way the regex parser's own output is.
+    event_time       TEXT             NOT NULL,
+    is_anomaly       BOOLEAN          NOT NULL,
+    reason           TEXT             NOT NULL,
+    confidence_score DOUBLE PRECISION NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS anomalies_upload_idx ON anomalies (upload_id);

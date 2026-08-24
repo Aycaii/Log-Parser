@@ -15,11 +15,9 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//grab password and username
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	//validation checks
 	if len(username) < 5 || len(password) < 5 {
 		er := http.StatusNotAcceptable
 		http.Error(w, "Invalid username/password", er)
@@ -77,7 +75,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, //can't be accessed by front end javascript
 	})
 
-	// Set CSRF token in a cookie
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "csrf_token",
@@ -86,7 +83,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: false, //needs to be accessible from client side
 	})
 
-	// Store tokens in the database
 
 	if _, err := db.DB.Exec(`UPDATE users SET session_token = $1, csrf_token = $2 WHERE id = $3`, sessionToken, csrfToken, id); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -119,7 +115,6 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: false,
 	})
 
-	// Clear the tokens from the database
 	if _, err := db.DB.Exec(`UPDATE users SET session_token = NULL, csrf_token = NULL WHERE id = $1`, id); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -128,7 +123,6 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func Protected(w http.ResponseWriter, r *http.Request) {
-	// Same Origin Policy
 	if r.Method != http.MethodPost {
 		er := http.StatusMethodNotAllowed
 		http.Error(w, "Invalid request method", er)
