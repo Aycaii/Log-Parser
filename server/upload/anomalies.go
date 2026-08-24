@@ -6,9 +6,6 @@ import (
 )
 
 // storeAnomalies persists a completed AI threat report against an upload
-// that's already committed. It runs outside the upload/events transaction
-// on purpose -- anomaly detection is a bonus enrichment, so a failure here
-// must never roll back the upload that already succeeded.
 func storeAnomalies(uploadID int64, report *threatdetect.AIThreatResponse) error {
 	if _, err := db.DB.Exec(
 		`UPDATE uploads SET threat_summary = $1 WHERE id = $2`,
