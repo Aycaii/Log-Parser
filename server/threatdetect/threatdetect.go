@@ -4,7 +4,7 @@
 // KNOWN LIMITATION: a whole uploaded file can't fit in one prompt, since
 // Gemini's free tier keeps the context window and requests-per-minute rate
 // tight. Entries are split into fixed-size batches and analyzed separately
-// instead, so the model never sees more than one batch's lines at a time --
+// instead, so the model never sees more than one batch's lines at a time 
 // a pattern that only shows up spread thinly across many batches won't be
 // caught, since results are just concatenated afterward, not re-analyzed
 // together. A paid tier or a model with bigger limits would reduce this.
@@ -66,12 +66,9 @@ type batchOutcome struct {
 	err    error
 }
 
-// AnalyzeLogsWithAI sends every parsed entry to an LLM and asks it to flag
-// anomalies, batching batchSize entries per request since a single prompt
-// can't hold an arbitrarily large file (see the package comment above for
-// what that costs). Uses Gemini's endpoint
-// (https://ai.google.dev/gemini-api/docs/openai) -- get a free key at
-// https://aistudio.google.com/apikey.
+// Uses Gemini's endpoint (https://ai.google.dev/gemini-api/docs/openai)
+// get a free key at https://aistudio.google.com/apikey
+// set env variable GEMINI_API_KEY to the key
 func AnalyzeLogsWithAI(entries []parser.LogEntry) (*AIThreatResponse, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {

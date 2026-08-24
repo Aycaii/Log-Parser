@@ -1,0 +1,18 @@
+10.1.2.30 - - [24/Aug/2026:20:00:03 +0000] "GET /login HTTP/1.1" 200 1024
+10.1.2.30 - - [24/Aug/2026:20:00:09 +0000] "POST /api/v1/auth HTTP/1.1" 200 512
+45.33.10.88 - - [24/Aug/2026:20:02:14 +0000] "GET /../../etc/passwd HTTP/1.1" 400 0
+45.33.10.88 - - [24/Aug/2026:20:02:19 +0000] "GET /api/v1/../../config HTTP/1.1" 400 0
+10.1.2.30 - - [24/Aug/2026:20:03:41 +0000] "GET /dashboard HTTP/1.1" 200 2048
+203.0.113.90 - - [24/Aug/2026:20:05:02 +0000] "GET /api/v1/orders HTTP/1.1" 200 1536
+not even close to a valid access log line, drop it
+45.33.10.88 - - [24/Aug/2026:20:07:37 +0000] "GET /admin/../../../root HTTP/1.1" 400 0
+10.1.2.30 - - [24/Aug/2026:20:09:12 +0000] "GET /static/app.js HTTP/1.1" 200 4096
+203.0.113.90 - - [24/Aug/2026:20:11:48 +0000] "GET /api/v1/orders HTTP/1.1" 200 1536
+{"unrelated": "payload", "purpose": "should not match the log regex"}
+10.1.2.30 - - [24/Aug/2026:20:14:26 +0000] "POST /api/v1/auth HTTP/1.1" 200 512
+45.33.10.88 - - [24/Aug/2026:20:16:03 +0000] "GET /favicon.ico HTTP/1.1" 404 209
+203.0.113.90 - - [24/Aug/2026:20:18:55 +0000] "GET /dashboard HTTP/1.1" 200 2048
+10.1.2.30 - - [24/Aug/2026:20:21:30 +0000] "GET /login HTTP/1.1" 200 1024
+45.33.10.88 - - [24/Aug/2026:20:23:47 +0000] "DELETE /api/v1/orders/9 HTTP/1.1" 403 256
+203.0.113.90 - - [24/Aug/2026:20:26:19 +0000] "GET /api/v1/orders HTTP/1.1" 200 1536
+10.1.2.30 - - [24/Aug/2026:20:29:04 +0000] "GET /static/app.js HTTP/1.1" 200 4096

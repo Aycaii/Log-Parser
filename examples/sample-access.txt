@@ -1,0 +1,20 @@
+203.0.113.44 - - [24/Aug/2026:09:00:01 +0000] "GET /login HTTP/1.1" 200 1024
+203.0.113.44 - - [24/Aug/2026:09:00:04 +0000] "POST /api/v1/auth HTTP/1.1" 401 128
+203.0.113.44 - - [24/Aug/2026:09:00:06 +0000] "POST /api/v1/auth HTTP/1.1" 401 128
+203.0.113.44 - - [24/Aug/2026:09:00:08 +0000] "POST /api/v1/auth HTTP/1.1" 401 128
+203.0.113.44 - - [24/Aug/2026:09:00:10 +0000] "POST /api/v1/auth HTTP/1.1" 401 128
+203.0.113.44 - - [24/Aug/2026:09:00:12 +0000] "POST /api/v1/auth HTTP/1.1" 200 512
+this entry got mangled during shipping and should be skipped
+172.16.0.9 - - [24/Aug/2026:09:02:33 +0000] "GET /dashboard HTTP/1.1" 200 2048
+198.51.100.5 - - [24/Aug/2026:09:04:15 +0000] "GET /api/v1/reports HTTP/1.1" 200 3072
+172.16.0.9 - - [24/Aug/2026:09:07:52 +0000] "GET /static/style.css HTTP/1.1" 200 2048
+198.51.100.5 - - [24/Aug/2026:09:09:20 +0000] "DELETE /api/v1/users/17 HTTP/1.1" 403 256
+{"noise": true, "reason": "not an actual log line"}
+172.16.0.9 - - [24/Aug/2026:09:12:41 +0000] "GET /dashboard HTTP/1.1" 200 2048
+198.51.100.5 - - [24/Aug/2026:09:15:03 +0000] "GET /favicon.ico HTTP/1.1" 404 209
+203.0.113.44 - - [24/Aug/2026:09:17:29 +0000] "GET /admin HTTP/1.1" 403 256
+172.16.0.9 - - [24/Aug/2026:09:20:58 +0000] "GET /api/v1/reports HTTP/1.1" 200 3072
+198.51.100.5 - - [24/Aug/2026:09:24:11 +0000] "POST /api/v1/auth HTTP/1.1" 200 512
+203.0.113.44 - - [24/Aug/2026:09:27:46 +0000] "GET /login HTTP/1.1" 200 1024
+172.16.0.9 - - [24/Aug/2026:09:31:02 +0000] "GET /dashboard HTTP/1.1" 200 2048
+198.51.100.5 - - [24/Aug/2026:09:34:37 +0000] "GET /static/style.css HTTP/1.1" 200 2048
