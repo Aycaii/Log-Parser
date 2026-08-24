@@ -46,3 +46,31 @@ CREATE TABLE IF NOT EXISTS uploads (
 
 -- Listing a user's uploads newest-first is the only read path so far.
 CREATE INDEX IF NOT EXISTS uploads_user_idx ON uploads (user_id, uploaded_at DESC);
+
+-- Set once at upload time by the parser, so the uploads list can show
+-- "987/1000 lines parsed" without a COUNT query against `events`.
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS parsed_count  INT NOT NULL DEFAULT 0;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS skipped_count INT NOT NULL DEFAULT 0;
+
+-- Raw text of lines the parser couldn't match, newline-joined -- lets the
+-- "skipped lines" tab show an analyst exactly what didn't parse, not just a
+-- count.
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS skipped_lines TEXT NOT NULL DEFAULT '';
+
+-- One row per successfully parsed log line. Populated once, at upload time,
+-- from the raw bytes already sitting in uploads.content -- not re-parsed on
+-- every read.
+CREATE TABLE IF NOT EXISTS events (
+    id          BIGSERIAL   PRIMARY KEY,
+    upload_id   BIGINT      NOT NULL REFERENCES uploads (id) ON DELETE CASCADE,
+    source_ip   TEXT        NOT NULL,
+    event_time  TIMESTAMPTZ NOT NULL,
+    method      TEXT        NOT NULL,
+    url         TEXT        NOT NULL,
+    status_code INT         NOT NULL,
+    bytes_sent  BIGINT      NOT NULL
+);
+
+-- Backs both the per-upload event list and the timeline summary, which both
+-- read in event_time order.
+CREATE INDEX IF NOT EXISTS events_upload_idx ON events (upload_id, event_time);

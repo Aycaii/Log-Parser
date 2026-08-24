@@ -31,28 +31,6 @@ async function post(path: string, body: Record<string, string>, csrf?: string) {
   return text;
 }
 
-// Same shape as post(), but the upload endpoints respond with JSON rather
-// than a plain status string.
-async function postJSON<T>(path: string, body: Record<string, string>, csrf?: string): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
-  if (csrf) headers["X-CSRF-Token"] = csrf;
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers,
-    credentials: "include",
-    body: new URLSearchParams(body).toString(),
-  });
-
-  if (!res.ok) {
-    const text = (await res.text()).trim();
-    throw new Error(text || `Request failed (${res.status})`);
-  }
-  return res.json();
-}
-
 export function register(username: string, password: string) {
   return post("/register", { username, password });
 }
@@ -75,10 +53,59 @@ export type UploadMeta = {
   content_type: string;
   size_bytes: number;
   uploaded_at: string;
+  parsed_count: number;
+  skipped_count: number;
 };
 
+export type LogEntry = {
+  timestamp: string;
+  source_ip: string;
+  method: string;
+  url: string;
+  status_code: number;
+  bytes_sent: number;
+};
+
+export type CountEntry = { key: string; count: number };
+export type TimelineBucket = { bucket_start: string; count: number };
+
+export type Summary = {
+  total_events: number;
+  skipped_lines: number;
+  timeline: TimelineBucket[];
+  status_breakdown: CountEntry[];
+};
+
+export type EventsResponse = {
+  events: LogEntry[];
+  skipped_lines: string[];
+  summary: Summary;
+};
+
+async function authedGet<T>(path: string, params: Record<string, string>): Promise<T> {
+  const csrf = readCsrfToken();
+  const headers: Record<string, string> = {};
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+
+  const res = await fetch(`${API_BASE}${path}?${new URLSearchParams(params)}`, {
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const text = (await res.text()).trim();
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export function listUploads(username: string) {
-  return postJSON<UploadMeta[]>("/uploads", { username }, readCsrfToken() ?? undefined);
+  return authedGet<UploadMeta[]>("/uploads", { username });
+}
+
+export function getUploadEvents(uploadId: number, username: string) {
+  return authedGet<EventsResponse>("/uploads/events", { id: String(uploadId), username });
 }
 
 /**

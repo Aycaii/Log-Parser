@@ -21,7 +21,7 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
         w.Header().Set("Access-Control-Allow-Credentials", "true")
         
         // 3. Declare allowed HTTP methods and custom headers.
-        w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 
         // 4. Handle Preflight: Browsers send an automatic OPTIONS request before POSTs 
