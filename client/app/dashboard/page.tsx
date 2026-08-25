@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   logout,
@@ -8,6 +8,7 @@ import {
   readCsrfToken,
   uploadFile,
   getUploadEvents,
+  retryThreatDetection,
   type UploadMeta,
   type EventsResponse,
   type LogEntry,
@@ -164,6 +165,41 @@ function AnomalyBadge({ score }: { score: number }) {
 
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "informational"];
+const SEVERITY_RANK: Record<Severity, number> = Object.fromEntries(
+  SEVERITIES.map((s, i) => [s, i]),
+) as Record<Severity, number>;
+
+type FindingsSortField = "severity" | "event_time" | "source_ip" | "reason" | "confidence_score";
+
+function findingSortValue(a: Anomaly, field: FindingsSortField): string | number {
+  if (field === "severity") return SEVERITY_RANK[a.severity];
+  return a[field];
+}
+
+const FINDINGS_FILTER_FIELDS: { key: FindingsSortField; label: string }[] = [
+  { key: "severity", label: "Severity" },
+  { key: "confidence_score", label: "Confidence" },
+  { key: "event_time", label: "Time" },
+  { key: "source_ip", label: "Source IP" },
+  { key: "reason", label: "Reason" },
+];
+
+type FindingsFilterRow = { field: FindingsSortField; value: string };
+
+function matchesFindingFilter(a: Anomaly, field: FindingsSortField, rawValue: string): boolean {
+  const value = rawValue.trim();
+  if (!value) return true;
+  switch (field) {
+    case "severity":
+      return a.severity === value;
+    case "event_time":
+      return a.event_time.slice(0, 10) === value;
+    case "confidence_score":
+      return String(a.confidence_score).includes(value);
+    default:
+      return a[field].toLowerCase().includes(value.toLowerCase());
+  }
+}
 
 function SeverityBadge({ severity }: { severity: Severity }) {
   return <span className="status-chip">{severity}</span>;
@@ -181,35 +217,119 @@ function findingsStatusDot(status: ThreatStatus): string {
   }
 }
 
+const PAGE_SIZE = 50;
+
+function Pagination({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="pagination">
+      <button
+        className="btn ghost small"
+        disabled={page <= 1}
+        onClick={() => onPageChange(page - 1)}
+      >
+        Prev
+      </button>
+      <span className="sub">
+        Page {page} of {totalPages}
+      </span>
+      <button
+        className="btn ghost small"
+        disabled={page >= totalPages}
+        onClick={() => onPageChange(page + 1)}
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
 function FindingsPanel({
   status,
   error,
-  summary,
   anomalies,
+  onRetry,
 }: {
   status: ThreatStatus;
   error: string;
-  summary: string;
   anomalies: Anomaly[];
+  onRetry: () => Promise<void>;
 }) {
-  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(
-    () => new Set(SEVERITIES),
-  );
+  const [sortField, setSortField] = useState<FindingsSortField>("severity");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [filters, setFilters] = useState<FindingsFilterRow[]>([]);
+  const [retrying, setRetrying] = useState(false);
 
-  function toggleSeverity(sev: Severity) {
-    setSeverityFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(sev)) {
-        next.delete(sev);
-      } else {
-        next.add(sev);
-      }
-      return next;
-    });
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      await onRetry();
+    } finally {
+      setRetrying(false);
+    }
   }
 
+  function updateFilter(index: number, patch: Partial<FindingsFilterRow>) {
+    setFilters((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  }
+  function addFilter() {
+    setFilters((prev) => [...prev, { field: "source_ip", value: "" }]);
+  }
+  function removeFilter(index: number) {
+    setFilters((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function toggleSort(field: FindingsSortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
+
+  function sortableHeader(field: FindingsSortField, label: string) {
+    return (
+      <th className="sortable" onClick={() => toggleSort(field)}>
+        {label}
+        {sortField === field && (
+          <span className="sort-indicator">{sortDir === "asc" ? " ▲" : " ▼"}</span>
+        )}
+      </th>
+    );
+  }
+
+  const [page, setPage] = useState(1);
+
   const flagged = anomalies.filter((a) => a.is_anomaly);
-  const filteredFlagged = flagged.filter((a) => severityFilter.has(a.severity));
+  const filteredFlagged = useMemo(
+    () => flagged.filter((a) => filters.every((f) => matchesFindingFilter(a, f.field, f.value))),
+    [flagged, filters],
+  );
+  const sortedFlagged = useMemo(
+    () =>
+      [...filteredFlagged].sort((a, b) => {
+        const va = findingSortValue(a, sortField);
+        const vb = findingSortValue(b, sortField);
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        return sortDir === "asc" ? cmp : -cmp;
+      }),
+    [filteredFlagged, sortField, sortDir],
+  );
+  const totalPages = Math.max(1, Math.ceil(sortedFlagged.length / PAGE_SIZE));
+  const pageClamped = Math.min(page, totalPages);
+  const pagedFlagged = sortedFlagged.slice(
+    (pageClamped - 1) * PAGE_SIZE,
+    pageClamped * PAGE_SIZE,
+  );
 
   if (status === "pending") {
     return <p className="sub">Pending AI analysis</p>;
@@ -226,56 +346,93 @@ function FindingsPanel({
 
   if (status === "error") {
     return (
-      <p className="msg">
-        Threat detection failed and produced no report: {error || "unknown error"}
-      </p>
+      <div className="retry-block">
+        <p className="msg">
+          Threat detection failed and produced no report: {error || "unknown error"}
+        </p>
+        <button className="btn ghost small" disabled={retrying} onClick={handleRetry}>
+          {retrying ? "Retrying..." : "Retry"}
+        </button>
+      </div>
     );
   }
 
   return (
     <>
-      {summary && <p className="sub">{summary}</p>}
       {flagged.length === 0 ? (
         <p className="sub">Detection ran and found no anomalies.</p>
       ) : (
         <>
           <div className="filter-toolbar">
-            {SEVERITIES.map((sev) => (
-              <button
-                key={sev}
-                type="button"
-                className={`severity-toggle ${severityFilter.has(sev) ? "active" : ""}`}
-                onClick={() => toggleSeverity(sev)}
-              >
-                {sev}
-              </button>
+            {filters.map((f, i) => (
+              <div className="filter-box" key={i}>
+                <select
+                  value={f.field}
+                  onChange={(e) =>
+                    updateFilter(i, { field: e.target.value as FindingsSortField, value: "" })
+                  }
+                >
+                  {FINDINGS_FILTER_FIELDS.map((ff) => (
+                    <option key={ff.key} value={ff.key}>
+                      {ff.label}
+                    </option>
+                  ))}
+                </select>
+                {f.field === "severity" ? (
+                  <select
+                    value={f.value}
+                    onChange={(e) => updateFilter(i, { value: e.target.value })}
+                  >
+                    <option value="">Any</option>
+                    {SEVERITIES.map((sev) => (
+                      <option key={sev} value={sev}>
+                        {sev}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={f.field === "event_time" ? "date" : "text"}
+                    placeholder="Value"
+                    value={f.value}
+                    onChange={(e) => updateFilter(i, { value: e.target.value })}
+                  />
+                )}
+                <button className="btn ghost small" onClick={() => removeFilter(i)}>
+                  Remove
+                </button>
+              </div>
             ))}
+            <button className="btn ghost small" onClick={addFilter}>
+              + Add filter
+            </button>
           </div>
+
           {filteredFlagged.length === 0 ? (
-            <p className="sub">No anomalies match the selected severities.</p>
+            <p className="sub">No anomalies match the current filter(s).</p>
           ) : (
             <table className="uploads-table">
               <thead>
                 <tr>
-                  <th>Severity</th>
-                  <th>Time</th>
-                  <th>Source IP</th>
-                  <th>Reason</th>
-                  <th>Confidence</th>
+                  {sortableHeader("severity", "Severity")}
+                  {sortableHeader("confidence_score", "Confidence")}
+                  {sortableHeader("event_time", "Time")}
+                  {sortableHeader("source_ip", "Source IP")}
+                  {sortableHeader("reason", "Reason")}
                 </tr>
               </thead>
               <tbody>
-                {filteredFlagged.map((a, i) => (
+                {pagedFlagged.map((a, i) => (
                   <tr key={i}>
                     <td>
                       <SeverityBadge severity={a.severity} />
                     </td>
-                    <td>{a.event_time}</td>
-                    <td>{a.source_ip}</td>
-                    <td>{a.reason}</td>
                     <td>
                       <AnomalyBadge score={a.confidence_score} />
                     </td>
+                    <td>{a.event_time}</td>
+                    <td>{a.source_ip}</td>
+                    <td>{a.reason}</td>
                   </tr>
                 ))}
               </tbody>
@@ -283,24 +440,31 @@ function FindingsPanel({
           )}
         </>
       )}
+      <Pagination page={pageClamped} totalPages={totalPages} onPageChange={setPage} />
     </>
   );
 }
 
-function EventsPanel({ data }: { data: EventsResponse }) {
+function EventsPanel({
+  data,
+  onRetryThreatDetection,
+}: {
+  data: EventsResponse;
+  onRetryThreatDetection: () => Promise<void>;
+}) {
   const {
     summary,
     events,
     skipped_lines,
-    threat_summary,
     threat_status,
     threat_error,
     anomalies,
   } = data;
-  const [tab, setTab] = useState<"events" | "skipped">("events");
+  const [tab, setTab] = useState<"findings" | "events" | "skipped">("findings");
   const [filters, setFilters] = useState<FilterRow[]>([]);
   const [sortField, setSortField] = useState<FilterField>("timestamp");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [eventsPage, setEventsPage] = useState(1);
 
   function updateFilter(index: number, patch: Partial<FilterRow>) {
     setFilters((prev) => prev.map((f, i) => (i === index ? { ...f, ...patch } : f)));
@@ -310,6 +474,26 @@ function EventsPanel({ data }: { data: EventsResponse }) {
   }
   function removeFilter(index: number) {
     setFilters((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function toggleSort(field: FilterField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
+
+  function sortableHeader(field: FilterField, label: string) {
+    return (
+      <th className="sortable" onClick={() => toggleSort(field)}>
+        {label}
+        {sortField === field && (
+          <span className="sort-indicator">{sortDir === "asc" ? " ▲" : " ▼"}</span>
+        )}
+      </th>
+    );
   }
 
   const filteredEvents = useMemo(
@@ -323,6 +507,12 @@ function EventsPanel({ data }: { data: EventsResponse }) {
           return sortDir === "asc" ? cmp : -cmp;
         }),
     [events, filters, sortField, sortDir],
+  );
+  const totalEventsPages = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE));
+  const eventsPageClamped = Math.min(eventsPage, totalEventsPages);
+  const pagedEvents = filteredEvents.slice(
+    (eventsPageClamped - 1) * PAGE_SIZE,
+    eventsPageClamped * PAGE_SIZE,
   );
 
   const liveSummary = useMemo(() => buildLiveSummary(filteredEvents), [filteredEvents]);
@@ -395,6 +585,13 @@ function EventsPanel({ data }: { data: EventsResponse }) {
       <div className="table-card">
         <div className="tab-strip">
           <button
+            className={tab === "findings" ? "active" : ""}
+            onClick={() => setTab("findings")}
+          >
+            <span className={`status-dot ${findingsStatusDot(threat_status)}`} />
+            Findings ({anomalies.filter((a) => a.is_anomaly).length})
+          </button>
+          <button
             className={tab === "events" ? "active" : ""}
             onClick={() => setTab("events")}
           >
@@ -409,76 +606,63 @@ function EventsPanel({ data }: { data: EventsResponse }) {
         </div>
 
         {tab === "events" && (
-          <>
-            <div className="filter-toolbar">
-              {filters.map((f, i) => (
-                <div className="filter-box" key={i}>
-                  <select
-                    value={f.field}
-                    onChange={(e) =>
-                      updateFilter(i, { field: e.target.value as FilterField, value: "" })
-                    }
-                  >
-                    {FILTER_FIELDS.map((ff) => (
-                      <option key={ff.key} value={ff.key}>
-                        {ff.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type={filterInputType(f.field)}
-                    placeholder="Value"
-                    value={f.value}
-                    onChange={(e) => updateFilter(i, { value: e.target.value })}
-                  />
-                  <button className="btn ghost small" onClick={() => removeFilter(i)}>
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button className="btn ghost small" onClick={addFilter}>
-                + Add filter
-              </button>
-            </div>
-
-            <div className="sort-toolbar">
-              <span className="sub">Sort by</span>
-              <select
-                value={sortField}
-                onChange={(e) => setSortField(e.target.value as FilterField)}
-              >
-                {FILTER_FIELDS.map((ff) => (
-                  <option key={ff.key} value={ff.key}>
-                    {ff.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="btn ghost small"
-                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-              >
-                {sortDir === "asc" ? "Ascending ▲" : "Descending ▼"}
-              </button>
-            </div>
-          </>
+          <div className="filter-toolbar">
+            {filters.map((f, i) => (
+              <div className="filter-box" key={i}>
+                <select
+                  value={f.field}
+                  onChange={(e) =>
+                    updateFilter(i, { field: e.target.value as FilterField, value: "" })
+                  }
+                >
+                  {FILTER_FIELDS.map((ff) => (
+                    <option key={ff.key} value={ff.key}>
+                      {ff.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type={filterInputType(f.field)}
+                  placeholder="Value"
+                  value={f.value}
+                  onChange={(e) => updateFilter(i, { value: e.target.value })}
+                />
+                <button className="btn ghost small" onClick={() => removeFilter(i)}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button className="btn ghost small" onClick={addFilter}>
+              + Add filter
+            </button>
+          </div>
         )}
 
         <div className="table-card-body">
-          {tab === "events" ? (
+          {tab === "findings" && (
+            <FindingsPanel
+              status={threat_status}
+              error={threat_error}
+              anomalies={anomalies}
+              onRetry={onRetryThreatDetection}
+            />
+          )}
+
+          {tab === "events" && (
             <>
               <table className="uploads-table">
                 <thead>
                   <tr>
-                    <th>Time</th>
-                    <th>Source IP</th>
-                    <th>Method</th>
-                    <th>URL</th>
-                    <th>Status</th>
-                    <th>Bytes</th>
+                    {sortableHeader("timestamp", "Time")}
+                    {sortableHeader("source_ip", "Source IP")}
+                    {sortableHeader("method", "Method")}
+                    {sortableHeader("url", "URL")}
+                    {sortableHeader("status_code", "Status")}
+                    {sortableHeader("bytes_sent", "Bytes")}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredEvents.map((e, i) => (
+                  {pagedEvents.map((e, i) => (
                     <tr key={i}>
                       <td>{new Date(e.timestamp).toLocaleString()}</td>
                       <td>{e.source_ip}</td>
@@ -493,27 +677,20 @@ function EventsPanel({ data }: { data: EventsResponse }) {
               {filteredEvents.length === 0 && (
                 <p className="sub">No events match this filter.</p>
               )}
+              <Pagination
+                page={eventsPageClamped}
+                totalPages={totalEventsPages}
+                onPageChange={setEventsPage}
+              />
             </>
-          ) : skipped_lines.length === 0 ? (
-            <p className="sub">No lines were skipped.</p>
-          ) : (
-            <pre className="skipped-lines">{skipped_lines.join("\n")}</pre>
           )}
-        </div>
-      </div>
 
-      <div className="table-card">
-        <div className="section-header">
-          <span className={`status-dot ${findingsStatusDot(threat_status)}`} />
-          Findings ({anomalies.filter((a) => a.is_anomaly).length})
-        </div>
-        <div className="table-card-body">
-          <FindingsPanel
-            status={threat_status}
-            error={threat_error}
-            summary={threat_summary}
-            anomalies={anomalies}
-          />
+          {tab === "skipped" &&
+            (skipped_lines.length === 0 ? (
+              <p className="sub">No lines were skipped.</p>
+            ) : (
+              <pre className="skipped-lines">{skipped_lines.join("\n")}</pre>
+            ))}
         </div>
       </div>
     </div>
@@ -528,7 +705,9 @@ export default function DashboardPage() {
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const fileHeaderRef = useRef<HTMLDivElement>(null);
   const [eventsById, setEventsById] = useState<Record<number, EventsResponse>>(
     {},
   );
@@ -537,9 +716,27 @@ export default function DashboardPage() {
 
   const refreshUploads = useCallback(async (name: string) => {
     try {
-      setUploads(await listUploads(name));
+      const list = await listUploads(name);
+      setUploads(list);
+      return list;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load uploads");
+      return [];
+    }
+  }, []);
+
+  const loadEvents = useCallback(async (id: number, name: string) => {
+    setEventsError(null);
+    setEventsLoadingId(id);
+    try {
+      const data = await getUploadEvents(id, name);
+      setEventsById((prev) => ({ ...prev, [id]: data }));
+    } catch (err) {
+      setEventsError(
+        err instanceof Error ? err.message : "Failed to load parsed events",
+      );
+    } finally {
+      setEventsLoadingId(null);
     }
   }, []);
 
@@ -550,8 +747,15 @@ export default function DashboardPage() {
       return;
     }
     setUsername(name);
-    refreshUploads(name);
-  }, [router, refreshUploads]);
+    refreshUploads(name).then((list) => {
+      if (list.length === 0) return;
+      const mostRecent = list.reduce((a, b) =>
+        new Date(a.uploaded_at) > new Date(b.uploaded_at) ? a : b,
+      );
+      setSelectedId(mostRecent.id);
+      loadEvents(mostRecent.id, name);
+    });
+  }, [router, refreshUploads, loadEvents]);
 
   async function onLogout() {
     if (username) {
@@ -568,8 +772,11 @@ export default function DashboardPage() {
     setError(null);
     setBusy(true);
     try {
-      await uploadFile(username, file);
+      const meta = await uploadFile(username, file);
       await refreshUploads(username);
+      setSelectedId(meta.id);
+      setPickerOpen(false);
+      loadEvents(meta.id, username);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -578,27 +785,30 @@ export default function DashboardPage() {
     }
   }
 
-  async function onRowClick(u: UploadMeta) {
-    if (expandedId === u.id) {
-      setExpandedId(null);
-      return;
-    }
-    setExpandedId(u.id);
-    if (eventsById[u.id] || !username) return;
-
-    setEventsError(null);
-    setEventsLoadingId(u.id);
-    try {
-      const data = await getUploadEvents(u.id, username);
-      setEventsById((prev) => ({ ...prev, [u.id]: data }));
-    } catch (err) {
-      setEventsError(
-        err instanceof Error ? err.message : "Failed to load parsed events",
-      );
-    } finally {
-      setEventsLoadingId(null);
-    }
+  function selectUpload(id: number) {
+    setSelectedId(id);
+    setPickerOpen(false);
+    if (eventsById[id] || !username) return;
+    loadEvents(id, username);
   }
+
+  async function onRetryThreatDetection(id: number) {
+    if (!username) return;
+    await retryThreatDetection(id, username);
+    await loadEvents(id, username);
+  }
+
+  // Close the file picker dropdown on outside clicks.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (fileHeaderRef.current && !fileHeaderRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [pickerOpen]);
 
   const eventsByIdRef = useRef(eventsById);
   useEffect(() => {
@@ -607,21 +817,23 @@ export default function DashboardPage() {
 
   // AI-based anomaly detection runs in the background after upload
   useEffect(() => {
-    if (expandedId == null || !username) return;
+    if (selectedId == null || !username) return;
 
     const interval = setInterval(async () => {
-      if (eventsByIdRef.current[expandedId]?.threat_status !== "pending") return;
+      if (eventsByIdRef.current[selectedId]?.threat_status !== "pending") return;
       try {
-        const fresh = await getUploadEvents(expandedId, username);
-        setEventsById((prev) => ({ ...prev, [expandedId]: fresh }));
+        const fresh = await getUploadEvents(selectedId, username);
+        setEventsById((prev) => ({ ...prev, [selectedId]: fresh }));
       } catch {
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [expandedId, username]);
+  }, [selectedId, username]);
 
   if (!username) return null;
+
+  const selected = uploads.find((u) => u.id === selectedId) ?? null;
 
   return (
     <>
@@ -632,8 +844,55 @@ export default function DashboardPage() {
         </button>
       </header>
       <main className="uploads">
-        <div className="uploads-toolbar">
-          <label className="btn upload-btn">
+        <div className="page-header">
+          {selected ? (
+            <div className="file-header" ref={fileHeaderRef}>
+              <button
+                type="button"
+                className={`file-header-title ${uploads.length > 1 ? "selectable" : ""}`}
+                onClick={() => uploads.length > 1 && setPickerOpen((v) => !v)}
+              >
+                <h1>{selected.filename}</h1>
+                {uploads.length > 1 && (
+                  <span className={`file-chevron ${pickerOpen ? "open" : ""}`}>
+                    ⌄
+                  </span>
+                )}
+              </button>
+              <p className="file-header-meta">
+                {formatSize(selected.size_bytes)} &middot;{" "}
+                {selected.parsed_count}/
+                {selected.parsed_count + selected.skipped_count} lines parsed
+                &middot; {new Date(selected.uploaded_at).toLocaleString()}
+              </p>
+
+              {pickerOpen && uploads.length > 1 && (
+                <div className="file-dropdown">
+                  {uploads
+                    .filter((u) => u.id !== selected.id)
+                    .map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className="file-dropdown-item"
+                        onClick={() => selectUpload(u.id)}
+                      >
+                        <span className="file-dropdown-name">{u.filename}</span>
+                        <span className="file-dropdown-sub">
+                          {formatSize(u.size_bytes)} &middot; {u.parsed_count}/
+                          {u.parsed_count + u.skipped_count} lines parsed
+                          &middot; {new Date(u.uploaded_at).toLocaleString()}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <h1 className="file-header-title placeholder">No files uploaded yet</h1>
+          )}
+
+          <label className="btn ghost upload-btn">
             {busy ? "Uploading..." : "Upload log file"}
             <input
               ref={fileInputRef}
@@ -648,56 +907,17 @@ export default function DashboardPage() {
 
         {error && <p className="msg">{error}</p>}
 
-        {uploads.length === 0 ? (
-          <p className="sub">No files uploaded yet.</p>
-        ) : (
+        {selected && (
           <>
-            <p className="sub">
-              Click a row to view its parsed events, timeline, and stats.
-            </p>
-            <table className="uploads-table">
-              <thead>
-                <tr>
-                  <th>Filename</th>
-                  <th>Size</th>
-                  <th>Parsed</th>
-                  <th>Uploaded</th>
-                </tr>
-              </thead>
-              <tbody>
-                {uploads.map((u) => (
-                  <Fragment key={u.id}>
-                    <tr className="upload-row" onClick={() => onRowClick(u)}>
-                      <td>
-                        <span className="expand-arrow">
-                          {expandedId === u.id ? "▾" : "▸"}
-                        </span>
-                        {u.filename}
-                      </td>
-                      <td>{formatSize(u.size_bytes)}</td>
-                      <td>
-                        {u.parsed_count}/{u.parsed_count + u.skipped_count}{" "}
-                        lines
-                      </td>
-                      <td>{new Date(u.uploaded_at).toLocaleString()}</td>
-                    </tr>
-                    {expandedId === u.id && (
-                      <tr key={`${u.id}-panel`}>
-                        <td colSpan={4}>
-                          {eventsLoadingId === u.id && (
-                            <p className="sub">Loading...</p>
-                          )}
-                          {eventsError && <p className="msg">{eventsError}</p>}
-                          {eventsById[u.id] && (
-                            <EventsPanel data={eventsById[u.id]} />
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+            {eventsLoadingId === selected.id && <p className="sub">Loading...</p>}
+            {eventsError && <p className="msg">{eventsError}</p>}
+            {eventsById[selected.id] && (
+              <EventsPanel
+                key={selected.id}
+                data={eventsById[selected.id]}
+                onRetryThreatDetection={() => onRetryThreatDetection(selected.id)}
+              />
+            )}
           </>
         )}
       </main>

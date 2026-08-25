@@ -3,7 +3,6 @@ package upload
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"logparseapp/auth"
 	"logparseapp/db"
 	"logparseapp/parser"
-	"logparseapp/threatdetect"
 )
 
 type UploadMeta struct {
@@ -106,29 +104,8 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AI-based anomaly detection over the entries just parsed. 
-	go func() {
-		if len(entries) == 0 {
-			if err := setThreatStatus(meta.ID, "skipped", ""); err != nil {
-				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
-			}
-			return
-		}
-		report, err := threatdetect.AnalyzeLogsWithAI(entries)
-		if err != nil {
-			log.Printf("anomaly detection failed for upload %d: %v", meta.ID, err)
-			if err := setThreatStatus(meta.ID, "error", err.Error()); err != nil {
-				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
-			}
-			return
-		}
-		if err := storeAnomalies(meta.ID, report); err != nil {
-			log.Printf("failed to store anomaly report for upload %d: %v", meta.ID, err)
-			if err := setThreatStatus(meta.ID, "error", err.Error()); err != nil {
-				log.Printf("failed to set threat status for upload %d: %v", meta.ID, err)
-			}
-		}
-	}()
+	// AI-based anomaly detection over the entries just parsed.
+	go analyzeAndStore(meta.ID, entries)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(meta)

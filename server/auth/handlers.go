@@ -27,7 +27,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	
 	if len(username) < 5 || len(password) < 5 {
 		er := http.StatusNotAcceptable
-		http.Error(w, "Invalid username/password", er)
+		http.Error(w, "Invalid username/password. Must be at least 5 characters", er)
 		return
 	}
 
