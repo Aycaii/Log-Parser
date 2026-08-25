@@ -1,6 +1,6 @@
 # Full-Stack Log Analyzer Application
 
-A full-stack log analysis tool for SOC analysts: upload an access log, get it parsed into structured events, and have an LLM flag anomalous entries with a reason, a confidence score, and a severity rating.
+A full-stack log analysis tool for SOC analysts: upload an NCSA Common Log Format (CLF) web server access log, get it parsed into structured events, and have an LLM flag anomalous entries with a reason, a confidence score, and a severity rating.
 
 - **Client**: Next.js 16 + React 19 + TypeScript (`client/`)
 - **Server**: Go, `net/http` (`server/`)
