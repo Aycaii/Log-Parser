@@ -92,7 +92,6 @@ export type EventsResponse = {
   events: LogEntry[];
   skipped_lines: string[];
   summary: Summary;
-  threat_summary: string;
   threat_status: ThreatStatus;
   threat_error: string;
   anomalies: Anomaly[];
@@ -123,6 +122,16 @@ export function listUploads(username: string) {
 
 export function getUploadEvents(uploadId: number, username: string) {
   return authedGet<EventsResponse>("/uploads/events", { id: String(uploadId), username });
+}
+
+// Re-runs AI threat detection for an upload whose previous attempt errored
+// out (e.g. a 429 from the AI API), discarding any partial report.
+export function retryThreatDetection(uploadId: number, username: string) {
+  return post(
+    "/uploads/retry",
+    { id: String(uploadId), username },
+    readCsrfToken() ?? undefined,
+  );
 }
 
 /**

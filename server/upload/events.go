@@ -40,16 +40,43 @@ type Anomaly struct {
 }
 
 type EventsResponse struct {
-	Events        []parser.LogEntry `json:"events"`
-	SkippedLines  []string          `json:"skipped_lines"`
-	Summary       Summary           `json:"summary"`
-	ThreatSummary string            `json:"threat_summary"`
-	ThreatStatus string    `json:"threat_status"`
-	ThreatError  string    `json:"threat_error"`
-	Anomalies    []Anomaly `json:"anomalies"`
+	Events       []parser.LogEntry `json:"events"`
+	SkippedLines []string          `json:"skipped_lines"`
+	Summary      Summary           `json:"summary"`
+	ThreatStatus string            `json:"threat_status"`
+	ThreatError  string            `json:"threat_error"`
+	Anomalies    []Anomaly         `json:"anomalies"`
 }
 
 const timelineBuckets = 20
+
+// loadUploadEvents fetches the parsed events for one upload. The join
+// against u.user_id, not just e.upload_id, is what stops one user from
+// pulling another's events by guessing an id.
+func loadUploadEvents(uploadID, userID int64) ([]parser.LogEntry, error) {
+	rows, err := db.DB.Query(
+		`SELECT e.source_ip, e.event_time, e.method, e.url, e.status_code, e.bytes_sent
+		 FROM events e
+		 JOIN uploads u ON u.id = e.upload_id
+		 WHERE e.upload_id = $1 AND u.user_id = $2
+		 ORDER BY e.event_time`,
+		uploadID, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []parser.LogEntry{}
+	for rows.Next() {
+		var e parser.LogEntry
+		if err := rows.Scan(&e.SourceIP, &e.Timestamp, &e.Method, &e.URL, &e.StatusCode, &e.BytesSent); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
 
 // GetUploadEvents returns the events parsed from one upload (at upload time,
 // see UploadFile) plus a summary built from them
@@ -73,12 +100,12 @@ func GetUploadEvents(w http.ResponseWriter, r *http.Request) {
 
 	var skippedCount int
 	var skippedLinesRaw string
-	var threatSummary, threatStatus, threatError string
+	var threatStatus, threatError string
 	err = db.DB.QueryRow(
-		`SELECT skipped_count, skipped_lines, threat_summary, threat_status, threat_error
+		`SELECT skipped_count, skipped_lines, threat_status, threat_error
 		 FROM uploads WHERE id = $1 AND user_id = $2`,
 		uploadID, userID,
-	).Scan(&skippedCount, &skippedLinesRaw, &threatSummary, &threatStatus, &threatError)
+	).Scan(&skippedCount, &skippedLinesRaw, &threatStatus, &threatError)
 	if err != nil {
 		http.Error(w, "Upload not found", http.StatusNotFound)
 		return
@@ -89,30 +116,10 @@ func GetUploadEvents(w http.ResponseWriter, r *http.Request) {
 		skippedLines = strings.Split(skippedLinesRaw, "\n")
 	}
 
-	// The join against u.user_id, not just e.upload_id, is what stops one
-	// user from pulling another's events by guessing an id.
-	rows, err := db.DB.Query(
-		`SELECT e.source_ip, e.event_time, e.method, e.url, e.status_code, e.bytes_sent
-		 FROM events e
-		 JOIN uploads u ON u.id = e.upload_id
-		 WHERE e.upload_id = $1 AND u.user_id = $2
-		 ORDER BY e.event_time`,
-		uploadID, userID,
-	)
+	events, err := loadUploadEvents(uploadID, userID)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-
-	events := []parser.LogEntry{}
-	for rows.Next() {
-		var e parser.LogEntry
-		if err := rows.Scan(&e.SourceIP, &e.Timestamp, &e.Method, &e.URL, &e.StatusCode, &e.BytesSent); err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		events = append(events, e)
 	}
 
 	// Same ownership guard as the events query above: join against
@@ -142,13 +149,12 @@ func GetUploadEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := EventsResponse{
-		Events:        events,
-		SkippedLines:  skippedLines,
-		Summary:       buildSummary(events, skippedCount),
-		ThreatSummary: threatSummary,
-		ThreatStatus:  threatStatus,
-		ThreatError:   threatError,
-		Anomalies:     anomalies,
+		Events:       events,
+		SkippedLines: skippedLines,
+		Summary:      buildSummary(events, skippedCount),
+		ThreatStatus: threatStatus,
+		ThreatError:  threatError,
+		Anomalies:    anomalies,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

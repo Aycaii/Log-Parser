@@ -147,6 +147,18 @@ select {
   color: var(--accent);
 }
 
+.retry-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.retry-block .msg {
+  flex: 1;
+  margin: 0;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -163,17 +175,116 @@ select {
 
 .uploads {
   padding: 24px 20px;
-  max-width: 960px;
+  width: 100%;
 }
 
-.uploads-toolbar {
-  margin-bottom: 18px;
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
 }
 
 .upload-btn {
   display: inline-block;
   width: auto;
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+.file-header {
+  position: relative;
+}
+
+.file-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  text-align: left;
+}
+
+.file-header-title.selectable {
+  cursor: pointer;
+}
+
+.file-header-title h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.file-header-title.placeholder {
+  color: var(--muted);
+  font-size: 1.4rem;
+  font-weight: 400;
+}
+
+.file-chevron {
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.file-chevron.open {
+  transform: rotate(180deg);
+}
+
+.file-header-meta {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.file-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  min-width: 320px;
+  max-width: 480px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.file-dropdown-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.file-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.file-dropdown-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.file-dropdown-sub {
+  font-size: 0.76rem;
+  color: var(--muted);
 }
 
 .uploads-table {
@@ -197,20 +308,6 @@ select {
   letter-spacing: 0.03em;
 }
 
-.upload-row {
-  cursor: pointer;
-}
-
-.upload-row:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.expand-arrow {
-  display: inline-block;
-  width: 14px;
-  color: var(--muted);
-}
-
 /* Tabs, filter bar, and table all live inside one bordered card, so the
    tabs read as attached to the table rather than floating above it. */
 .table-card {
@@ -225,24 +322,15 @@ select {
   margin-top: 18px;
 }
 
-/* Findings' card header: same look as a tab-strip, but a plain label since
-   there's nothing to switch between. */
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
 .tab-strip {
   display: flex;
   border-bottom: 1px solid var(--border);
 }
 
 .tab-strip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -278,8 +366,7 @@ select {
 }
 
 .filter-toolbar select,
-.filter-toolbar input,
-.sort-toolbar select {
+.filter-toolbar input {
   padding: 6px 9px;
   background: #0d131d;
   border: 1px solid var(--border);
@@ -287,18 +374,23 @@ select {
   font-size: 0.85rem;
 }
 
-.filter-toolbar select option,
-.sort-toolbar select option {
+.filter-toolbar select option {
   background: var(--panel);
   color: var(--text);
 }
 
-.sort-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+.uploads-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.uploads-table th.sortable:hover {
+  color: var(--text);
+}
+
+.sort-indicator {
+  color: var(--accent);
 }
 
 .btn.small {
@@ -408,42 +500,17 @@ select {
   background: var(--danger);
 }
 
-/* Toggleable severity filter chips in the Threats tab -- same shape as
-   .filter-box, but each one doubles as its own on/off control instead of
-   holding a separate dropdown + input. */
-.severity-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.severity-toggle.active {
-  color: var(--text);
-  border-color: var(--accent);
-  background: rgba(79, 140, 255, 0.08);
-}
-
-
-.table-card-body {
-  max-height: 320px;
-  overflow-y: auto;
-}
-
 .table-card-body .uploads-table th,
 .table-card-body .uploads-table td {
   font-size: 0.82rem;
   padding: 8px 10px;
 }
 
-.table-card-body .uploads-table thead th {
-  position: sticky;
-  top: 0;
-  background: var(--panel);
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
 }

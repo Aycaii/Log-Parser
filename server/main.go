@@ -27,6 +27,7 @@ func main() {
 	http.HandleFunc("/upload", withCORS(upload.UploadFile))
 	http.HandleFunc("/uploads", withCORS(upload.ListUploads))
 	http.HandleFunc("/uploads/events", withCORS(upload.GetUploadEvents))
+	http.HandleFunc("/uploads/retry", withCORS(upload.RetryThreatDetection))
 
 	fmt.Println("API listening on http://localhost:8000")
 	http.ListenAndServe(":8000", nil)
