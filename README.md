@@ -36,10 +36,7 @@ export GEMINI_API_KEY=your-key-here   # optional, enables AI anomaly detection
 - Per-upload dashboard: events table (filterable/sortable), request timeline chart, upload history
 - AI-based anomaly detection per upload: each flagged entry gets a plain-English reason, a confidence score, and a severity (`critical`/`high`/`medium`/`low`/`informational`), shown as badges in the UI and filterable by severity
 
-<details>
-<summary>Running each piece manually</summary>
-
-**Environment variables** (all optional):
+### Environment variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -48,6 +45,7 @@ export GEMINI_API_KEY=your-key-here   # optional, enables AI anomaly detection
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Override the Gemini model used |
 | `NEXT_PUBLIC_API_BASE` | `http://localhost:8000` | Where the client looks for the API |
 
+## Running Manually
 **Database** the server applies the schema automatically on boot, so no migration step is needed:
 
 ```bash
@@ -93,3 +91,4 @@ Anomaly detection is implemented in [`server/threatdetect/threatdetect.go`](serv
 - Sessions: the session and CSRF tokens are stored directly on the `users` row (see `server/db/schema.sql`), capping each user at one active session with no server-side expiry. A production version would use a dedicated `sessions` table storing hashed tokens.
 - Uploaded file bytes are stored directly in Postgres (`BYTEA`) rather than in object storage.
 - AI Approach: Because each batch (up to 50 events) is analyzed independently, a pattern spread thinly across many batches (e.g. a slow, low-and-slow brute force) won't be caught, only patterns visible within a single batch of 50 entries. A paid tier or a larger-context model would let this run in fewer, bigger batches.
+- AI Approach 2: A generic prompt is being fed to a Gemini endpoint, because of this all outputs of the AI analysis are non determinsitc. Variables such as confidence level should not be taken literally. 
